@@ -1,0 +1,33 @@
+---
+- name: Validate network automation runtime
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Verify socat is installed
+      ansible.builtin.command:
+        cmd: socat -V
+      register: socat_check
+      changed_when: false
+
+    - name: List installed Ansible collections
+      ansible.builtin.command:
+        cmd: ansible-galaxy collection list
+      register: collection_list
+      changed_when: false
+
+    - name: Verify required collections are present
+      ansible.builtin.assert:
+        that:
+          - "'cisco.ios' in collection_list.stdout"
+          - "'ansible.netcommon' in collection_list.stdout"
+        fail_msg: "Required network collections are missing from the execution environment."
+        success_msg: "Required network collections are installed."
+
+    - name: Report runtime validation
+      ansible.builtin.debug:
+        msg:
+          - "socat: PASS"
+          - "cisco.ios: PASS"
+          - "ansible.netcommon: PASS"
