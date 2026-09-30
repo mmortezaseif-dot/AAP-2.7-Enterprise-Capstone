@@ -5,12 +5,6 @@
   gather_facts: false
 
   tasks:
-    - name: Verify socat is installed
-      ansible.builtin.command:
-        cmd: socat -V
-      register: socat_check
-      changed_when: false
-
     - name: List installed Ansible collections
       ansible.builtin.command:
         cmd: ansible-galaxy collection list
@@ -25,9 +19,14 @@
         fail_msg: "Required network collections are missing from the execution environment."
         success_msg: "Required network collections are installed."
 
+    - name: Verify ansible-pylibssh is importable
+      ansible.builtin.command:
+        cmd: python3 -c "import pylibsshext"
+      changed_when: false
+
     - name: Report runtime validation
       ansible.builtin.debug:
         msg:
-          - "socat: PASS"
           - "cisco.ios: PASS"
           - "ansible.netcommon: PASS"
+          - "ansible-pylibssh: PASS"
