@@ -1,0 +1,75 @@
+---
+- name: Render Cisco routing intent with official resource modules
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    r1_ospf:
+      processes:
+        - process_id: 10
+          router_id: 1.1.1.1
+          network:
+            - address: 10.0.12.0
+              wildcard_bits: 0.0.0.3
+              area: "0"
+
+    r2_ospf:
+      processes:
+        - process_id: 10
+          router_id: 2.2.2.2
+          network:
+            - address: 10.0.12.0
+              wildcard_bits: 0.0.0.3
+              area: "0"
+
+    r1_bgp:
+      as_number: "65001"
+      bgp:
+        router_id:
+          address: 1.1.1.1
+      neighbors:
+        - neighbor_address: 10.0.12.2
+          remote_as: "65002"
+
+    r2_bgp:
+      as_number: "65002"
+      bgp:
+        router_id:
+          address: 2.2.2.2
+      neighbors:
+        - neighbor_address: 10.0.12.1
+          remote_as: "65001"
+
+  tasks:
+    - name: Render R1 OSPFv2 configuration
+      cisco.ios.ios_ospfv2:
+        config: "{{ r1_ospf }}"
+        state: rendered
+      register: r1_ospf_render
+
+    - name: Render R2 OSPFv2 configuration
+      cisco.ios.ios_ospfv2:
+        config: "{{ r2_ospf }}"
+        state: rendered
+      register: r2_ospf_render
+
+    - name: Render R1 BGP global configuration
+      cisco.ios.ios_bgp_global:
+        config: "{{ r1_bgp }}"
+        state: rendered
+      register: r1_bgp_render
+
+    - name: Render R2 BGP global configuration
+      cisco.ios.ios_bgp_global:
+        config: "{{ r2_bgp }}"
+        state: rendered
+      register: r2_bgp_render
+
+    - name: Show rendered routing intent
+      ansible.builtin.debug:
+        msg:
+          - "R1 OSPF={{ r1_ospf_render.rendered }}"
+          - "R2 OSPF={{ r2_ospf_render.rendered }}"
+          - "R1 BGP={{ r1_bgp_render.rendered }}"
+          - "R2 BGP={{ r2_bgp_render.rendered }}"
