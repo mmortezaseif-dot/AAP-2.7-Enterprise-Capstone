@@ -1,0 +1,26 @@
+---
+- name: Discover Cisco IOS capabilities
+  hosts: cisco
+  gather_facts: false
+  connection: ansible.netcommon.network_cli
+
+  tasks:
+    - name: Gather minimum IOS facts and available network resources
+      cisco.ios.ios_facts:
+        gather_subset:
+          - min
+        available_network_resources: true
+      register: ios_facts_result
+
+    - name: Display device identity
+      ansible.builtin.debug:
+        msg:
+          - "Host={{ inventory_hostname }}"
+          - "Model={{ ansible_net_model | default('unknown') }}"
+          - "Version={{ ansible_net_version | default('unknown') }}"
+          - "Image={{ ansible_net_image | default('unknown') }}"
+          - "API={{ ansible_net_api | default('unknown') }}"
+
+    - name: Display available resource modules reported by device facts
+      ansible.builtin.debug:
+        var: ansible_net_available_network_resources
