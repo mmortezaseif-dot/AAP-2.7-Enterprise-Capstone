@@ -5,6 +5,9 @@
   gather_facts: false
 
   vars:
+    # Connection variables override Demo Inventory's localhost defaults.
+    # Resource modules require network_cli even for offline state: rendered.
+    ansible_connection: ansible.netcommon.network_cli
     ansible_network_os: cisco.ios.ios
     r1_ospf:
       processes:
