@@ -1,10 +1,11 @@
 ---
 - name: Render Cisco routing intent with official resource modules
   hosts: localhost
-  connection: local
+  connection: ansible.netcommon.network_cli
   gather_facts: false
 
   vars:
+    ansible_network_os: cisco.ios.ios
     r1_ospf:
       processes:
         - process_id: 10
