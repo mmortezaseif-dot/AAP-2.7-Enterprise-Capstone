@@ -1,0 +1,165 @@
+---
+- name: Render OSPF desired state with official Cisco resource module
+  hosts: localhost
+  connection: ansible.netcommon.network_cli
+  gather_facts: false
+
+  vars:
+    ansible_network_os: cisco.ios.ios
+
+  vars_files:
+    - ../data/ospf_desired_state.yml
+
+  tasks:
+    - name: Render OSPF configuration for each router
+      cisco.ios.ios_ospfv2:
+        config: "{{ item.value }}"
+        state: rendered
+      loop: "{{ ospf_devices | dict2items }}"
+      register: ospf_render_results
+
+    - name: Build per-device rendered CLI map
+      ansible.builtin.set_fact:
+        ospf_cli_map: >-
+          {{
+            ospf_cli_map | default({}) |
+            combine({item.item.key: item.rendered})
+          }}
+      loop: "{{ ospf_render_results.results }}"
+
+    - name: Show rendered change plan
+      ansible.builtin.debug:
+        var: ospf_cli_map
+
+
+- name: Apply rendered OSPF configuration through lab console transport
+  hosts: cisco
+  connection: local
+  gather_facts: false
+  serial: 1
+
+  tasks:
+    - name: Validate required lab transport variables
+      ansible.builtin.assert:
+        that:
+          - funnel_host is defined
+          - funnel_port is defined
+          - local_relay_port is defined
+          - ansible_user is defined
+          - ansible_password is defined
+          - inventory_hostname in hostvars['localhost']['ospf_cli_map']
+        fail_msg: "Missing transport, credential, or rendered OSPF data."
+
+    - name: Start local TLS relay
+      ansible.builtin.shell: |
+        nohup python3 "{{ playbook_dir }}/../tools/tls_tcp_relay.py"           --listen-host 127.0.0.1           --listen-port {{ local_relay_port }}           --remote-host "{{ funnel_host }}"           --remote-port {{ funnel_port }}           >"/tmp/{{ inventory_hostname }}-tls-relay.log" 2>&1 &
+        echo $!
+      register: relay_process
+      changed_when: true
+
+    - name: Wait for relay listener
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ local_relay_port }}"
+        timeout: 15
+
+    - name: Apply OSPF CLI
+      ansible.netcommon.telnet:
+        host: 127.0.0.1
+        port: "{{ local_relay_port }}"
+        user: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        login_prompt: "Username: "
+        password_prompt: "Password: "
+        prompts:
+          - "[>#]"
+        send_newline: true
+        command: >-
+          {{
+            ['terminal length 0', 'configure terminal']
+            + hostvars['localhost']['ospf_cli_map'][inventory_hostname]
+            + ['end']
+          }}
+      register: ospf_apply
+      no_log: true
+
+    - name: Report OSPF apply
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: OSPF configuration sent ✅"
+
+  always:
+    - name: Stop local TLS relay
+      ansible.builtin.command:
+        cmd: "kill {{ relay_process.stdout }}"
+      when:
+        - relay_process is defined
+        - relay_process.stdout | default('') | length > 0
+      changed_when: false
+      failed_when: false
+
+
+- name: Verify OSPF adjacency and learned loopback routes
+  hosts: cisco
+  connection: local
+  gather_facts: false
+  serial: 1
+
+  vars:
+    remote_loopback:
+      R1: "2.2.2.2"
+      R2: "1.1.1.1"
+
+  tasks:
+    - name: Start local TLS relay for verification
+      ansible.builtin.shell: |
+        nohup python3 "{{ playbook_dir }}/../tools/tls_tcp_relay.py"           --listen-host 127.0.0.1           --listen-port {{ local_relay_port }}           --remote-host "{{ funnel_host }}"           --remote-port {{ funnel_port }}           >"/tmp/{{ inventory_hostname }}-verify-relay.log" 2>&1 &
+        echo $!
+      register: verify_relay_process
+      changed_when: true
+
+    - name: Wait for verification relay
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ local_relay_port }}"
+        timeout: 15
+
+    - name: Collect OSPF verification evidence
+      ansible.netcommon.telnet:
+        host: 127.0.0.1
+        port: "{{ local_relay_port }}"
+        user: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        login_prompt: "Username: "
+        password_prompt: "Password: "
+        prompts:
+          - "[>#]"
+        send_newline: true
+        command:
+          - terminal length 0
+          - show ip ospf neighbor
+          - show ip route ospf
+          - show ip protocols
+      register: ospf_verify
+      no_log: true
+
+    - name: Validate OSPF business state
+      ansible.builtin.assert:
+        that:
+          - "'FULL' in (ospf_verify.output | join('\n'))"
+          - "remote_loopback[inventory_hostname] in (ospf_verify.output | join('\n'))"
+        fail_msg: "{{ inventory_hostname }}: OSPF desired state NOT proven ❌"
+        success_msg: "{{ inventory_hostname }}: OSPF adjacency and route learning PASS ✅"
+
+    - name: Show concise OSPF result
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: OSPF PASS ✅"
+
+  always:
+    - name: Stop verification TLS relay
+      ansible.builtin.command:
+        cmd: "kill {{ verify_relay_process.stdout }}"
+      when:
+        - verify_relay_process is defined
+        - verify_relay_process.stdout | default('') | length > 0
+      changed_when: false
+      failed_when: false
