@@ -1,0 +1,25 @@
+---
+ospf_devices:
+  R1:
+    processes:
+      - process_id: 10
+        router_id: 1.1.1.1
+        network:
+          - address: 10.0.12.0
+            wildcard_bits: 0.0.0.3
+            area: "0"
+          - address: 1.1.1.1
+            wildcard_bits: 0.0.0.0
+            area: "0"
+
+  R2:
+    processes:
+      - process_id: 10
+        router_id: 2.2.2.2
+        network:
+          - address: 10.0.12.0
+            wildcard_bits: 0.0.0.3
+            area: "0"
+          - address: 2.2.2.2
+            wildcard_bits: 0.0.0.0
+            area: "0"
